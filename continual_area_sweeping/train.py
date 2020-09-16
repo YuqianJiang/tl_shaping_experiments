@@ -56,15 +56,6 @@ def get_mask_region_shielding(spec, gw, pos):
 
     return shield_neginf_mask
 
-def get_mask_region_all(gw, method_type, spec):
-    mask_list = []
-    for y in range(gw.grid.shape[0]):
-        for x in range(gw.grid.shape[1]):
-            mask_list.append(get_mask_region_pos(gw, (x, y), method_type, spec))
-
-    mask = np.asarray(mask_list)
-    return mask
-
 def get_mask_region_pos(gw, method_type, spec, pos):
     if not method_type:
         mask = np.zeros(len(gw.actions))
@@ -74,52 +65,7 @@ def get_mask_region_pos(gw, method_type, spec, pos):
         mask = get_mask_region_shaping(spec, gw, pos)
     return mask
 
-def get_mask_person_shaping(spec, gw, pos, person_pos):
-
-    if gw.person_viewable(pos, person_pos):  # the person is visible now
-        spec_dict, following_region = spec
-        ind_person = grid_to_array(person_pos, gw.grid.shape)
-        dist_curr = region_distance(pos, following_region[ind_person], gw)
-        phi_mask = np.full(len(gw.actions), -dist_curr)
-        for action in range(len(gw.actions)):
-            target = gw.get_target(action, pos)
-            if not gw.check_target(target, pos):
-                continue
-            dist_next = region_distance(target, following_region[ind_person], gw)
-            if dist_next < dist_curr:
-                phi_mask[action] += 1
-            if dist_next == 0:
-                phi_mask[action] = 0
-    else:
-        phi_mask = np.full(len(gw.actions), -6)
-    return phi_mask
-
-def get_mask_person_shielding(spec, gw, pos, person_pos):
-    spec_dict, following_region = spec
-    shield_neginf_mask = np.full(len(gw.actions), -np.inf)
-    ind_person = grid_to_array(person_pos, gw.grid.shape)
-
-    if gw.person_viewable(pos, person_pos):  # but the person is visible now
-        for action in range(len(gw.actions)):
-            target = gw.get_target(action, pos)
-            ind_robot_next = target[1] * gw.grid.shape[1] + target[0]
-            if (ind_robot_next, ind_person) in spec_dict:
-                shield_neginf_mask[action] = 0
-    else:
-        print("Lost the person while shielding!")
-    return shield_neginf_mask
-
-def get_mask_person_pos(gw, method_type, spec, pos, person_pos):
-    if not method_type:
-        mask = np.zeros(len(gw.actions))
-    elif method_type == "shielding":
-        mask = get_mask_person_shielding(spec, gw, pos, person_pos)
-    elif method_type == "shaping":
-        mask = get_mask_person_shaping(spec, gw, pos, person_pos)
-    return mask
-
-
-def run(config, gw, spec=None, method_type=None, eval_period=1, eval_fn=lambda: None):
+def run(config, gw, spec=None, method_type=None, eval_period=1, eval_fn=lambda: None, get_mask=lambda: None):
     tf.reset_default_graph()
     with U.make_session() as sess:
 
@@ -153,7 +99,7 @@ def run(config, gw, spec=None, method_type=None, eval_period=1, eval_fn=lambda: 
         def policy():
             env.state = env.construct_state()
             if env.gw.mode == "person":
-                action_mask = get_mask_person_pos(gw, method_type, spec, gw.pos, env.gw.person.pos)
+                action_mask = get_mask(gw, method_type, spec, gw.pos, env.gw.person.pos)
             else:
                 action_mask = get_mask_region_pos(gw, method_type, spec, gw.pos)
 
@@ -182,7 +128,7 @@ def run(config, gw, spec=None, method_type=None, eval_period=1, eval_fn=lambda: 
                 print (env.gw.pos[1], env.gw.pos[0], "!!!!!!!!!!")
 
             if gw.mode == "person":
-                action_mask = get_mask_person_pos(env.gw, method_type, spec, env.gw.pos, env.gw.person.pos)
+                action_mask = get_mask(env.gw, method_type, spec, env.gw.pos, env.gw.person.pos)
             else:
                 action_mask = get_mask_region_pos(env.gw, method_type, spec, env.gw.pos)
             a = act(obs[None], action_mask, update_eps=exploration.value(t))[0]
@@ -198,7 +144,7 @@ def run(config, gw, spec=None, method_type=None, eval_period=1, eval_fn=lambda: 
             action_mask_p = np.zeros(len(gw.actions))
             if method_type:
                 if gw.mode == "person":
-                    action_mask_p = get_mask_person_pos(env.gw, method_type, spec, env.gw.pos, env.gw.person.pos)
+                    action_mask_p = get_mask(env.gw, method_type, spec, env.gw.pos, env.gw.person.pos)
                 else:
                     action_mask_p = get_mask_region_pos(env.gw, method_type, spec, env.gw.pos)
 

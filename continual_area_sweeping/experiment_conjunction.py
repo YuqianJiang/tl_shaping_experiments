@@ -48,8 +48,7 @@ if __name__ == '__main__':
             'eval_period': 1000,
             'exploration_sched_timesteps': 10000,
             'strategy_file': 'Example1_Perm_readable.json',
-            'replay_buffer_size': 100000,
-            'perfect_knowledge': False
+            'replay_buffer_size': 100000
         }
     else:
         with open(args.config, 'r') as f:
@@ -104,11 +103,7 @@ if __name__ == '__main__':
 
         print (img)
 
-        if config.get('perfect_knowledge', True):
-            gw = generate_random_grid(img, 188, (10, 20), config.get('bound', 1), mode=config.get('mode', 'linear'),
-                                   stack=True)
-        else:
-            gw = generate_random_grid(img, 188, (10, 20), config.get('bound', 1), mode=config.get('mode', 'linear'),
+        gw = generate_random_grid(img, 188, (10, 20), config.get('bound', 1), mode=config.get('mode', 'linear'),
                                    stack=True, extra_event_region = [(r, c) for r in range(6, 9) for c in range(0, 15)])
 
         strategy = (w_dict, following_region)
@@ -151,12 +146,24 @@ if __name__ == '__main__':
             return min_dist
 
         def get_mask_person_shaping(spec, gw, pos, person_pos):
+            dist_curr = region_distance(pos, gw.extra_event_region, gw)
+            phi_mask = np.full(len(gw.actions), -dist_curr)
+            for action in range(len(gw.actions)):
+                target = gw.get_target(action, pos)
+                if not gw.check_target(target, pos):
+                    continue
+                dist_next = region_distance(target, gw.extra_event_region, gw)
+                if dist_next < dist_curr:
+                    phi_mask[action] += 1
+                elif dist_curr == 0 and dist_next == 0:
+                    phi_mask[action] += 1
+
             if gw.person_viewable(pos, person_pos):  # the person is visible now
                 spec_dict, following_region = spec
                 ind_person = person_pos[1] * gw.grid.shape[1] + person_pos[0]
                 dist_curr = region_distance(pos, following_region[ind_person], gw)
-                phi_mask = np.full(len(gw.actions), -dist_curr)
                 for action in range(len(gw.actions)):
+                    phi_mask[action] += -dist_curr
                     target = gw.get_target(action, pos)
                     if not gw.check_target(target, pos):
                         continue
@@ -166,23 +173,52 @@ if __name__ == '__main__':
                     if dist_next == 0:
                         phi_mask[action] = 0
             else:
-                phi_mask = np.full(len(gw.actions), -6)
+                phi_mask = [phi - 6 for phi in phi_mask]
             return phi_mask
 
         def get_mask_person_shielding(spec, gw, pos, person_pos):
             spec_dict, following_region = spec
+            shield_following_neginf_mask = np.full(len(gw.actions), -np.inf)
             shield_neginf_mask = np.full(len(gw.actions), -np.inf)
             ind_person = person_pos[1] * gw.grid.shape[1] + person_pos[0]
 
-            if gw.person_viewable(pos, person_pos):  # but the person is visible now
+            dist_curr = region_distance(pos, gw.extra_event_region, gw)
+            for action in range(len(gw.actions)):
+                target = gw.get_target(action, pos)
+                if not gw.check_target(target, pos):
+                    continue
+                dist_next = region_distance(target, gw.extra_event_region, gw)
+                if dist_next < dist_curr or (dist_curr == 0 and dist_next == 0):
+                    shield_neginf_mask[action] = 0
+
+            return shield_neginf_mask
+
+            '''
+            if gw.person_viewable(pos, person_pos): 
+                dist_curr = region_distance(pos, gw.extra_event_region, gw)
                 for action in range(len(gw.actions)):
                     target = gw.get_target(action, pos)
+                    if not gw.check_target(target, pos):
+                        continue
+                    dist_next = region_distance(target, gw.extra_event_region, gw)
+                    closer = False
+                    if dist_next < dist_curr or (dist_curr == 0 and dist_next == 0):
+                        closer = True
                     ind_robot_next = target[1] * gw.grid.shape[1] + target[0]
                     if (ind_robot_next, ind_person) in spec_dict:
-                        shield_neginf_mask[action] = 0
+                        shield_following_neginf_mask[action] = 0
+                        if closer:
+                            shield_neginf_mask[action] = 0
             else:
-                print("Lost the person while shielding!")
-            return shield_neginf_mask
+                print ("Lost person")
+
+             if np.max(shield_neginf_mask) > -np.inf:
+                 return shield_neginf_mask
+             else:
+                 return shield_following_neginf_mask
+
+            return shield_following_neginf_mask
+            '''
 
         def get_mask_person_pos(gw, method_type, spec, pos, person_pos):
             if not method_type:
@@ -192,7 +228,7 @@ if __name__ == '__main__':
             elif method_type == "shaping":
                 mask = get_mask_person_shaping(spec, gw, pos, person_pos)
             return mask
-
+        
         writer.writerow({'TYPE': 'Shaping'})
         csvfile.flush()
         print("Shaping")

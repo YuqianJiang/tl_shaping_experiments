@@ -34,16 +34,22 @@ The environment `env.py` implements a robot sweeping repeatedly and non-uniforml
 
 ### Training
 
-To run the experiment in the first scenario, run this command:
+To run the experiment in the "always kitchen" scenario:
 
 ```train
 python continual_area_sweeping/shield_experiment_region.py
 ```
 
-To run the experiment in the second scenario, run this command:
+To run the experiment in the "always keep human visible" scenario:
 
 ```train
 python continual_area_sweeping/shield_experiment_person.py
+```
+
+To run the experiment in the "always keep human visible and always corridor" scenario:
+
+```train
+python continual_area_sweeping/experiment_conjunction.py
 ```
 
 ## Grid World
